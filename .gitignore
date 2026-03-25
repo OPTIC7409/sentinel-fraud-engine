@@ -1,0 +1,71 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Go
+*.test
+*.out
+go.work
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+*.pem
+*.key
+
+# Database
+*.db
+*.sqlite
+
+# ML Models
+ml/model/*.pkl
+ml/model/*.joblib
+ml/model/*.h5
+!ml/model/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Node
+node_modules/
+.next/
+out/
+build/
+.turbo/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+*.egg-info/
+
+# Data
+*.csv
+*.parquet
+data/
+!ml/training/data/.gitkeep
+
+# Docker
+.docker/
+docker-compose.override.yml
