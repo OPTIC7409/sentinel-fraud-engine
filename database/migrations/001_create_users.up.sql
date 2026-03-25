@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_login      TIMESTAMP
 );
 
-CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 COMMENT ON TABLE users IS 'Dashboard users (fraud analysts and admins)';
 COMMENT ON COLUMN users.password_hash IS 'bcrypt hash with cost factor 12';

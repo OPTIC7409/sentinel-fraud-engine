@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	databaseURL = getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/sentinel_fraud?sslmode=disable")
+	databaseURL = getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/sentinel_fraud?sslmode=disable")
 	jwtSecret   = []byte(getEnv("JWT_SECRET", "sentinel-secret-change-in-production"))
 )
 
@@ -71,13 +71,14 @@ func main() {
 	protected.HandleFunc("/alerts/{id}/resolve", api.ResolveAlert).Methods("POST")
 	protected.HandleFunc("/metrics", api.GetMetrics).Methods("GET")
 
-	// CORS middleware for frontend
-	router.Use(corsMiddleware)
+	// CORS must wrap the whole router: OPTIONS preflight does not match route-specific
+	// Methods("POST"|"GET"), so mux would 404 without headers if CORS were only router.Use.
+	handler := corsMiddleware(router)
 
 	// Start server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", Port),
-		Handler:      router,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -149,8 +150,7 @@ func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For demo purposes, accept any login (in production, verify against bcrypt hash)
-	// Real implementation would query users table and verify password_hash
+	// Demo: issue JWT without checking password_hash (replace with real auth for prod).
 
 	token, err := generateJWT(creds.Email, "analyst")
 	if err != nil {

@@ -34,9 +34,10 @@ Thumbs.db
 *.db
 *.sqlite
 
-# ML Models
+# ML Models (keep the small v1 artefact so clones can run; regenerate with ml/training/train_model.py)
 ml/model/*.pkl
 ml/model/*.joblib
+!ml/model/fraud_model_v1.0.0.joblib
 ml/model/*.h5
 !ml/model/.gitkeep
 

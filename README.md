@@ -1,297 +1,201 @@
 # Sentinel Fraud Engine
 
-Real-time fraud detection and risk scoring platform built with production-grade architecture.
+A sample fraud detection and risk scoring platform: event-driven microservices, PostgreSQL for durable state, Kafka between services, and a small Next.js dashboard for analysts. I built it to show how I think about correctness, operability, and the kind of constraints you care about in banking technology (auditability, clear failure modes, honest metrics).
 
-## 🏗️ System Overview
+If you are hiring for a backend or full-stack role in financial services, the sections on architecture, how to run it, and **challenges I faced** are the ones worth reading first.
 
-A microservices-based, event-driven fraud detection system that processes 1000+ transactions per second, assigns AI-powered risk scores, and triggers real-time alerts.
+## What this is
 
-## 🛠️ Tech Stack
+Transactions flow through ingest, scoring, alerting, and persistence. The risk engine applies a trained model (logistic regression in v1) and writes scores to Postgres. High scores surface as alerts. The API gateway exposes authenticated HTTP APIs; the dashboard polls for updates (no WebSocket on the gateway today).
 
-- **Backend Services**: Golang (4 microservices)
-- **Database**: PostgreSQL with optimized indexing
-- **Event Streaming**: Kafka / Redis Streams
-- **ML Model**: Python (scikit-learn) + Go inference
-- **Frontend**: Next.js with real-time updates
-- **Observability**: Structured logging (zerolog), Prometheus metrics
+Design goals: explainable scoring, structured logs, metrics hooks, and a schema that supports investigation and reporting, not just real-time display.
 
-## 📁 Project Structure
+## Tech stack
+
+- Go: four services (ingest, risk engine, alerts, API gateway)
+- PostgreSQL 15 (migrations under `database/migrations/`)
+- Kafka (Confluent images in Compose) for decoupling producers and consumers
+- Python / scikit-learn for training; inference path integrated in the risk engine
+- Next.js dashboard under `frontend/dashboard/`
+- Zerolog-style JSON logging; services expose Prometheus-style endpoints where implemented
+
+## Repository layout
 
 ```
 sentinel-fraud-engine/
 ├── services/
-│   ├── transaction-ingest/    # Receives and validates transactions
-│   ├── risk-engine/            # ML-powered fraud scoring
-│   ├── alert-service/          # Alert generation and dispatch
-│   └── api-gateway/            # REST API + WebSocket
-├── frontend/
-│   └── dashboard/              # Next.js real-time dashboard
-├── ml/
-│   ├── training/               # Model training scripts
-│   └── model/                  # Trained model artifacts
-├── database/
-│   └── migrations/             # SQL schema migrations
-├── shared/
-│   ├── models/                 # Shared Go types
-│   ├── kafka/                  # Event streaming utilities
-│   └── postgres/               # Database utilities
-└── docs/                       # Documentation
+│   ├── transaction-ingest/
+│   ├── risk-engine/
+│   ├── alert-service/
+│   └── api-gateway/
+├── frontend/dashboard/
+├── ml/training/          model training
+├── ml/model/             serialised artifacts
+├── database/migrations/  SQL up/down
+├── tools/loadtest/       Kafka producer load tool
+├── shared/               Go packages shared by services
+└── docs/                 extra design notes
 ```
 
-## 🏛️ Architecture
+More detail: [ARCHITECTURE.md](./ARCHITECTURE.md), [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md).
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed system design.
+## Architecture (short)
 
-**Key Services:**
-1. **Transaction Ingest** - Validates and publishes transaction events
-2. **Risk Engine** - Extracts features, runs ML model, scores fraud risk (0-100)
-3. **Alert Service** - Triggers alerts for high-risk transactions (score ≥ 75)
-4. **API Gateway** - JWT auth, rate limiting, REST API for frontend
+1. **Transaction ingest** validates and publishes to Kafka.
+2. **Risk engine** consumes, scores (model + features), writes to Postgres, publishes scored events.
+3. **Alert service** consumes scored events and raises alerts when policy says so (for example high risk score).
+4. **API gateway** issues JWTs, rate limits, and serves REST for the dashboard and automation.
 
-**Data Flow:**
-```
-Transaction → Ingest → Kafka → Risk Engine → ML Model → Kafka → Alert Service
-                                      ↓
-                              PostgreSQL (audit trail)
-                                      ↓
-                              API Gateway → Dashboard
-```
+Data flow in one line: ingest to Kafka, risk engine to Postgres and Kafka, alerts downstream, gateway reads Postgres for the UI.
 
-## 🗄️ Database Schema
+## Getting started
 
-See [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for complete schema design.
+**Prerequisites:** Docker and Docker Compose, Go 1.21+ for local tooling, Node 18+ for the dashboard. Python 3.11+ if you retrain the model.
 
-**Core Tables:**
-- `transactions` - All financial transactions
-- `risk_scores` - ML model outputs and audit trail
-- `alerts` - High-risk transaction alerts
-- `users` - Dashboard users (fraud analysts)
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Docker & Docker Compose
-- Go 1.21+ (for local development)
-- Python 3.11+ (for ML training)
-
-### Quick Start (Docker)
+**Quick path (recommended):**
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/sentinel-fraud-engine.git
+git clone <your-fork-or-url> sentinel-fraud-engine
 cd sentinel-fraud-engine
-
-# 2. Start all services
 ./start.sh
-
-# 3. Verify services are running
-curl http://localhost:8000/health
-
-# 4. View logs
-docker-compose logs -f
+curl -s http://localhost:8000/health
 ```
 
-The startup script will:
-- Start PostgreSQL and Kafka
-- Run database migrations
-- Seed test users
-- Start all 4 microservices
+`start.sh` builds images, starts Postgres (host port **5433** mapped to container 5432), Zookeeper/Kafka, runs migrations, seeds users, then starts all application containers.
 
-### Manual Setup (Local Development)
+**Dashboard:**
 
 ```bash
-# 1. Start infrastructure
-docker-compose up -d postgres zookeeper kafka
+cd frontend/dashboard
+cp .env.example .env.local   # optional; default API is http://localhost:8000
+npm install
+npm run dev
+```
 
-# 2. Run migrations
+Open http://localhost:3000, sign in. Seeded analyst: `analyst@sentinel.com` / `sentinel123` (see `database/seeds/001_users.sql`). Full dashboard notes: [frontend/dashboard/README.md](./frontend/dashboard/README.md).
+
+**Manual service startup (no app containers):**
+
+```bash
+docker compose up -d postgres zookeeper kafka
 cd database && go run migrate.go up && cd ..
-
-# 3. Seed database
 docker exec -i sentinel-postgres psql -U postgres -d sentinel_fraud < database/seeds/001_users.sql
-
-# 4. Start services individually
-cd services/transaction-ingest && go run main.go &
-cd services/risk-engine && go run main.go &
-cd services/alert-service && go run main.go &
-cd services/api-gateway && go run main.go &
+# then run each service with go run from its directory, with env vars for Kafka and DATABASE_URL
 ```
 
-### Testing the System
+## API smoke tests
 
 ```bash
-# Check API health
-curl http://localhost:8000/health
+curl -s http://localhost:8000/health
 
-# Login (get JWT token)
-curl -X POST http://localhost:8000/api/auth/login \
+curl -s -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"analyst@sentinel.com","password":"sentinel123"}'
 
-# Get recent transactions (use token from login)
-curl http://localhost:8000/api/transactions?limit=10 \
-  -H "Authorization: Bearer <your-token>"
+# use the token from the response:
+curl -s "http://localhost:8000/api/transactions?limit=10" \
+  -H "Authorization: Bearer <token>"
 
-# Get open alerts
-curl http://localhost:8000/api/alerts?status=open \
-  -H "Authorization: Bearer <your-token>"
+curl -s "http://localhost:8000/api/alerts?status=open" \
+  -H "Authorization: Bearer <token>"
 
-# Get system metrics
-curl http://localhost:8000/api/metrics \
-  -H "Authorization: Bearer <your-token>"
+curl -s http://localhost:8000/api/metrics \
+  -H "Authorization: Bearer <token>"
 ```
 
-### Monitoring Logs
+## Testing and load generation
 
 ```bash
-# All services
-docker-compose logs -f
-
-# Specific service
-docker-compose logs -f risk-engine
-
-# Watch alerts being created
-docker-compose logs -f alert-service | grep "FRAUD ALERT"
-
-# Monitor transaction processing
-docker-compose logs -f risk-engine | grep "scored successfully"
-```
-
-## 🧪 Testing
-
-```bash
-# Run all unit tests
 go test ./...
-
-# Run integration tests
-go test ./... -tags=integration
-
-# Load test (generate 1000 TPS)
-cd services/transaction-ingest
-go run cmd/loadtest/main.go --tps 1000
 ```
 
-## 📊 Observability
+There are few tests today; the fraud model package has coverage. Integration-tagged tests are not wired up yet (`go test -tags=integration` is a placeholder for pipeline work).
 
-**Structured Logging:**
+**Load tool (publishes synthetic messages to Kafka):**
+
 ```bash
-# All services log JSON to stdout
+go run ./tools/loadtest/main.go --tps 1000 --duration 60 --brokers localhost:9092
+```
+
+### Sample load run (local Docker)
+
+One run on my machine with `--tps 1000 --duration 60` and Kafka on `localhost:9092`:
+
+| Metric | Value |
+|--------|------:|
+| Duration | 60 s |
+| Publishes succeeded | 4,499 |
+| Publish errors | 1 |
+| Publish success rate | 99.98% |
+| Measured producer TPS | ~75 |
+| Requested TPS flag | 1,000 |
+
+That success rate is **Kafka client and broker reliability** for the producer, not classifier precision or recall. Achieved TPS is dominated by a single-process ticker on a laptop, not by the theoretical ceiling of the services.
+
+## Observability
+
+```bash
 docker compose logs -f risk-engine
+curl -s http://localhost:8002/metrics   # example; port depends on service exposure
 ```
 
-**Metrics:**
-```bash
-# Prometheus metrics exposed on each service
-curl http://localhost:8002/metrics
-```
+Useful signals to watch in a real deployment: consumer lag, scoring latency, error rates on ingest, and DB connection health.
 
-**Key Metrics:**
-- Transaction processing rate (TPS)
-- ML inference latency (p95, p99)
-- Kafka consumer lag
-- Database query times
+## Security (intentional limits of this repo)
 
-## 🔐 Security
+- JWT auth on protected routes (secret from env in Compose; rotate for anything beyond local demo).
+- Rate limiting on the gateway (token bucket).
+- Passwords in seeds are bcrypt; the demo login handler still issues tokens without hitting the users table (documented in code as a shortcut). In a bank interview I would say: replace with real credential verification and audit login events.
 
-- **Authentication**: JWT tokens (1-hour expiry)
-- **Authorization**: Role-based access (analyst, admin)
-- **Rate Limiting**: Token bucket algorithm (100 req/min per user)
-- **Input Validation**: All inputs sanitized and type-checked
-- **Secrets Management**: Environment variables (never committed)
+## ML model (v1)
 
-## 🧠 ML Model
+Logistic regression on synthetic data. The risk engine builds five numeric features in Go (amount, velocity, location deviation, time flag, merchant-category prior), passes them to a trained **sklearn** model in Python, gets **P(fraud)**, then sets **risk score = round(100 × P(fraud))** clamped to 0–100. Exact formulas, the sigmoid, and training hyperparameters are in [ARCHITECTURE.md](./ARCHITECTURE.md) under **How the risk score is computed (mathematics and ML)**.
 
-**Algorithm**: Logistic Regression (v1)
+The small `ml/model/fraud_model_v1.0.0.joblib` is in git so Docker and local runs work after clone. Large CSVs under `ml/training/data/` stay out of the repo (`.gitignore`); regenerate with `python ml/training/generate_data.py` then `python ml/training/train_model.py` from a venv with `pandas`, `scikit-learn`, `joblib` installed.
 
-**Features:**
-1. Transaction amount (normalized)
-2. Velocity score (transactions per hour)
-3. Location deviation (distance from typical location)
-4. Time anomaly (off-hours activity)
-5. Merchant category risk
+## Performance targets (design intent)
 
-**Output**: Fraud probability (0-1) → Risk score (0-100)
+Throughput in the 1k TPS class, low scoring latency, API p95 targets in the README of a typical internal tool. The numbers above separate **what I measured on a laptop** from **what the architecture is aiming for** under proper hardware and tuning.
 
-**Training Data**: 100,000 synthetic transactions with 5% fraud rate
+## Challenges I faced and how I resolved them
 
-## 📈 Performance
+These are real issues I hit while making the stack pleasant to run on a developer machine and from the browser. I am including them because they mirror the kind of debugging you do in production engineering: follow the failure, fix the root cause, make it hard to repeat the mistake.
 
-**Targets:**
-- Throughput: 1000+ TPS
-- Latency: p95 end-to-end < 50ms
-- ML inference: < 10ms
-- API response: p95 < 100ms
+**1. Postgres port collision.** Another project already owned `localhost:5432`. Binding Sentinel’s container to the same host port failed. I mapped Postgres to **5433** on the host while keeping `postgres:5432` inside the Docker network so service env vars stayed unchanged. I aligned the Go migration default and local dev defaults with the host port so `start.sh` could run migrations from the laptop against the published port.
 
-## 🔄 Deployment
+**2. Migrations appeared to run but created nothing.** `start.sh` runs `go run migrate.go` from inside `database/`, while the migrator looked for `database/migrations` relative to the current working directory. That path did not exist from that cwd, so the tool logged “no migration files” and exited zero. Seeds then failed (`users` missing), and because the script uses `set -e`, **application containers never started**. The dashboard showed “Failed to fetch” simply because nothing was listening on port 8000. I fixed the migrator to resolve the migrations directory **next to the source file** and to **fail hard** if no migration files match, so silent no-ops cannot happen again.
 
-**Docker Compose (Local/Staging):**
-```bash
-docker compose up --build
-```
+**3. Repeat runs against a dirty local database.** After partial applies, rerunning SQL could fail on “index already exists”. I made indexes **idempotent** (`CREATE INDEX IF NOT EXISTS`) and wrapped enum creation in exception-safe blocks where Postgres requires it, so recovery on a shared laptop does not mean wiping the volume every time.
 
-**Production Considerations:**
-- Kubernetes deployment (multi-replica services)
-- PostgreSQL read replicas for scaling
-- Kafka partitions = parallelism factor
-- Redis cache for feature store
-- CDN for frontend assets
+**4. A bad comment in SQL blocked migration 004.** I had used `COMMENT ON COLUMN` for something that was a **table constraint**, not a column. Postgres correctly rejected it. Switching to `COMMENT ON CONSTRAINT` fixed the migration.
 
-## 📝 Design Decisions
+**5. Browser login blocked by CORS.** The dashboard on port 3000 calls the API on port 8000. Browsers send an **OPTIONS** preflight. Gorilla mux had registered `POST` only on `/api/auth/login`, so **OPTIONS did not match any route**, returned **404**, and never attached `Access-Control-Allow-Origin`. Wrapping the **entire** router in the CORS handler (instead of only `router.Use` after registration) ensures preflight always gets a 200 and the right headers before the real `POST` runs.
 
-### Why Kafka over RabbitMQ?
-- Higher throughput for log-based streaming
-- Event replay capability (reprocess by resetting offset)
-- Better for audit trail (events persisted on disk)
+Each of these is small on paper. Together they are the difference between a demo that “works on my machine if you know the incantation” and one a reviewer or hiring manager can actually run.
 
-### Why PostgreSQL over NoSQL?
-- ACID guarantees required for financial data
-- Complex relational queries for analytics
-- Battle-tested in fintech (compliance-ready)
+## Design choices (brief)
 
-### Why Logistic Regression initially?
-- Explainable (can justify why transaction was flagged)
-- Fast inference (<1ms)
-- Establishes baseline for future improvements
+- **Kafka** for append-only streaming, replay, and clear service boundaries (versus a single monolithic queue).
+- **Postgres** for ACID state, joins for analyst queries, and a straightforward audit story for transactions, scores, and alerts.
+- **Logistic regression first** for explainability and latency before moving to black-box models where model risk management gets heavier.
 
-## 🛣️ Roadmap
+## Roadmap (honest)
 
-**v1.0 (Current)**
-- [x] Core microservices architecture
-- [x] Basic ML fraud model
-- [x] Real-time dashboard
-- [ ] Load testing and optimization
+- More automated tests and an integration test that stands up Compose in CI.
+- Deeper metrics and SLOs per service.
+- Optional WebSocket or SSE on the gateway if the UI needs push instead of polling.
+- Stronger auth (verify passwords against `users`, session revocation, audit log).
 
-**v2.0 (Future)**
-- [ ] Graph-based fraud detection
-- [ ] Advanced ML models (XGBoost, Neural Network)
-- [ ] Multi-region deployment
-- [ ] Automated model retraining pipeline
+## Documentation index
 
-## 📚 Documentation
+- [ARCHITECTURE.md](./ARCHITECTURE.md)
+- [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md)
+- [frontend/dashboard/README.md](./frontend/dashboard/README.md)
 
-- [Architecture Design](./ARCHITECTURE.md)
-- [Database Schema](./DATABASE_SCHEMA.md)
-- [API Documentation](./docs/API.md) (coming soon)
-- [Deployment Guide](./docs/DEPLOYMENT.md) (coming soon)
+## Licence
 
-## 🤝 Contributing
+This project is released under the MIT licence. See the `LICENSE` file in the repository if present.
 
-This is an educational project demonstrating production-grade system design.
+## Closing
 
-**Code Standards:**
-- Follow Go conventions (gofmt, golangci-lint)
-- Write tests for business logic
-- Document non-obvious decisions
-- Keep functions focused and small
-
-## 📄 License
-
-MIT License - see LICENSE file for details
-
-## 👥 Authors
-
-Built as a demonstration of senior-level software engineering practices for fraud detection systems.
-
----
-
-**Note**: This system is designed to the standards expected at tier-1 financial institutions (e.g., JPMorgan Chase). Every design decision prioritizes correctness, observability, and production-readiness.
+I treat this project as a portfolio piece for **software engineering in regulated, high-stakes domains**: clear data paths, operational guardrails, and straight talk about what is measured versus what is claimed. If you want to discuss how this would map to your stack, partitioning strategy, or control standards, that is exactly the conversation I am looking for.

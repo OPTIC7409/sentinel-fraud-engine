@@ -10,10 +10,10 @@ CREATE TABLE IF NOT EXISTS risk_scores (
     scored_at           TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_risk_scores_transaction ON risk_scores(transaction_id);
-CREATE INDEX idx_risk_scores_score ON risk_scores(risk_score DESC);
-CREATE INDEX idx_risk_scores_scored_at ON risk_scores(scored_at DESC);
-CREATE INDEX idx_risk_scores_model_version ON risk_scores(model_version);
+CREATE INDEX IF NOT EXISTS idx_risk_scores_transaction ON risk_scores(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_risk_scores_score ON risk_scores(risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_scores_scored_at ON risk_scores(scored_at DESC);
+CREATE INDEX IF NOT EXISTS idx_risk_scores_model_version ON risk_scores(model_version);
 
 COMMENT ON TABLE risk_scores IS 'Audit trail of all fraud risk assessments';
 COMMENT ON COLUMN risk_scores.transaction_id IS 'One-to-one with transactions (idempotency)';

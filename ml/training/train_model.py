@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""
-Train fraud detection model using synthetic transaction data.
-
-Logistic Regression model (v1) for explainability and speed.
-Trains on 5 engineered features to predict fraud probability.
-"""
+"""Train sklearn logistic regression on ml/training/data/features.csv; write joblib to ml/model/."""
 
 import pandas as pd
 import numpy as np
@@ -86,7 +81,7 @@ def train_model(X_train, y_train):
     
     model.fit(X_train, y_train)
     
-    print("✓ Model trained successfully")
+    print("Model trained.")
     
     return model
 
@@ -163,7 +158,7 @@ def save_model(model, feature_names, metrics):
     # Save model artifact
     model_path = os.path.join(model_dir, f"fraud_model_{MODEL_VERSION}.joblib")
     joblib.dump(model, model_path)
-    print(f"\n✓ Model saved to: {model_path}")
+    print(f"\nModel saved to: {model_path}")
     
     # Save metadata
     metadata = {
@@ -192,7 +187,7 @@ def save_model(model, feature_names, metrics):
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     
-    print(f"✓ Metadata saved to: {metadata_path}")
+    print(f"Metadata saved to: {metadata_path}")
     
     # Create a symlink to latest model
     latest_model_path = os.path.join(model_dir, "fraud_model_latest.joblib")
@@ -207,7 +202,7 @@ def save_model(model, feature_names, metrics):
     os.symlink(os.path.basename(model_path), latest_model_path)
     os.symlink(os.path.basename(metadata_path), latest_metadata_path)
     
-    print(f"✓ Latest model symlink: {latest_model_path}")
+    print(f"Symlink updated: {latest_model_path}")
 
 
 def main():

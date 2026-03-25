@@ -1,6 +1,14 @@
--- Create alert priority and status enums
-CREATE TYPE alert_priority AS ENUM ('medium', 'high', 'critical');
-CREATE TYPE alert_status AS ENUM ('open', 'investigating', 'resolved', 'false_positive');
+-- Create alert priority and status enums (idempotent for partial reruns)
+DO $$ BEGIN
+    CREATE TYPE alert_priority AS ENUM ('medium', 'high', 'critical');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+    CREATE TYPE alert_status AS ENUM ('open', 'investigating', 'resolved', 'false_positive');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Create alerts table for high-risk transactions
 CREATE TABLE IF NOT EXISTS alerts (
@@ -19,12 +27,12 @@ CREATE TABLE IF NOT EXISTS alerts (
     )
 );
 
-CREATE INDEX idx_alerts_status_created ON alerts(status, created_at DESC);
-CREATE INDEX idx_alerts_assigned ON alerts(assigned_to) WHERE assigned_to IS NOT NULL;
-CREATE INDEX idx_alerts_transaction ON alerts(transaction_id);
-CREATE INDEX idx_alerts_priority ON alerts(priority, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_status_created ON alerts(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_assigned ON alerts(assigned_to) WHERE assigned_to IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_alerts_transaction ON alerts(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_priority ON alerts(priority, created_at DESC);
 
 COMMENT ON TABLE alerts IS 'Fraud alerts triggered by high-risk transactions';
 COMMENT ON COLUMN alerts.priority IS 'Auto-assigned: 75-84=medium, 85-94=high, 95+=critical';
 COMMENT ON COLUMN alerts.status IS 'Workflow: open → investigating → resolved/false_positive';
-COMMENT ON COLUMN alerts.check_resolved IS 'Ensures resolved_at is set when status is terminal';
+COMMENT ON CONSTRAINT check_resolved ON alerts IS 'Ensures resolved_at is set when status is terminal';

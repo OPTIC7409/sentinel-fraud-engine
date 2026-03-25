@@ -6,13 +6,23 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 
 	_ "github.com/lib/pq"
 )
 
+// migrationsDir returns .../database/migrations next to this file (works no matter the process cwd).
+func migrationsDir() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		log.Fatal("could not resolve migrations directory")
+	}
+	return filepath.Join(filepath.Dir(file), "migrations")
+}
+
 const (
-	defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/sentinel_fraud?sslmode=disable"
+	defaultDatabaseURL = "postgres://postgres:postgres@localhost:5433/sentinel_fraud?sslmode=disable"
 )
 
 func main() {
@@ -44,16 +54,15 @@ func main() {
 		log.Fatalf("Failed to ping database: %v", err)
 	}
 
-	// Get migration files
-	migrationsDir := "database/migrations"
-	files, err := filepath.Glob(filepath.Join(migrationsDir, fmt.Sprintf("*.%s.sql", command)))
+	dir := migrationsDir()
+	pattern := filepath.Join(dir, fmt.Sprintf("*.%s.sql", command))
+	files, err := filepath.Glob(pattern)
 	if err != nil {
 		log.Fatalf("Failed to read migration files: %v", err)
 	}
 
 	if len(files) == 0 {
-		log.Printf("No migration files found in %s", migrationsDir)
-		return
+		log.Fatalf("No migration files found matching %s", pattern)
 	}
 
 	// Sort files to ensure correct order

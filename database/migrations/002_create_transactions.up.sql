@@ -14,11 +14,11 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 
 -- Indexes for common query patterns
-CREATE INDEX idx_transactions_user_timestamp ON transactions(user_id, timestamp DESC);
-CREATE INDEX idx_transactions_merchant ON transactions(merchant_id, timestamp DESC);
-CREATE INDEX idx_transactions_timestamp ON transactions(timestamp DESC);
-CREATE INDEX idx_transactions_merchant_category ON transactions(merchant_category);
-CREATE INDEX idx_transactions_amount ON transactions(amount DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_user_timestamp ON transactions(user_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_merchant ON transactions(merchant_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_merchant_category ON transactions(merchant_category);
+CREATE INDEX IF NOT EXISTS idx_transactions_amount ON transactions(amount DESC);
 
 COMMENT ON TABLE transactions IS 'Immutable record of all financial transactions';
 COMMENT ON COLUMN transactions.timestamp IS 'Business timestamp (when transaction occurred)';

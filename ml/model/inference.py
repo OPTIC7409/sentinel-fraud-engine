@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Model inference script called from Go services.
-Loads trained model and predicts fraud probability for given features.
-"""
+"""stdin argv[1] = JSON features -> stdout JSON {probability}. Invoked from Go risk engine."""
 
 import sys
 import json
@@ -10,7 +7,6 @@ import joblib
 import numpy as np
 from pathlib import Path
 
-# Load model once at module level (cached for performance)
 MODEL_DIR = Path(__file__).parent
 MODEL_PATH = MODEL_DIR / "fraud_model_v1.0.0.joblib"
 
@@ -21,16 +17,7 @@ except Exception as e:
     sys.exit(1)
 
 def predict(features_dict):
-    """
-    Predict fraud probability from feature dictionary.
-    
-    Args:
-        features_dict: Dictionary with 5 features (order must match training)
-    
-    Returns:
-        float: Fraud probability (0.0-1.0)
-    """
-    # Feature order must match training data
+    # Column order must match train_model.py / scorer.go
     feature_order = [
         'amount_normalized',
         'velocity_score',

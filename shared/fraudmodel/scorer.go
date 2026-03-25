@@ -18,13 +18,12 @@ const (
 	ModelVersion = "v1.0.0"
 )
 
-// FraudScorer interface for fraud risk scoring
+// FraudScorer scores a single transaction.
 type FraudScorer interface {
 	PredictRisk(tx models.Transaction) (*RiskPrediction, error)
 	GetModelVersion() string
 }
 
-// RiskPrediction holds the output of fraud prediction
 type RiskPrediction struct {
 	FraudProbability float64            `json:"fraud_probability"`
 	RiskScore        int                `json:"risk_score"`
@@ -33,7 +32,7 @@ type RiskPrediction struct {
 	ProcessingTimeMs int64              `json:"processing_time_ms"`
 }
 
-// LogisticRegressionScorer implements fraud scoring using trained model
+// LogisticRegressionScorer runs sklearn logistic regression via ml/model/inference.py.
 type LogisticRegressionScorer struct {
 	modelPath     string
 	pythonScript  string
@@ -42,7 +41,7 @@ type LogisticRegressionScorer struct {
 	merchantRisks map[string]float64
 }
 
-// UserPattern tracks user behavior for velocity and location features
+// UserPattern tracks user behaviour for velocity and location features
 type UserPattern struct {
 	TypicalLat        float64
 	TypicalLng        float64
@@ -51,7 +50,6 @@ type UserPattern struct {
 	TotalTransactions int
 }
 
-// NewFraudScorer creates a new fraud scorer instance
 func NewFraudScorer(modelDir string) (FraudScorer, error) {
 	modelPath := filepath.Join(modelDir, fmt.Sprintf("fraud_model_%s.joblib", ModelVersion))
 
@@ -72,7 +70,6 @@ func NewFraudScorer(modelDir string) (FraudScorer, error) {
 	return scorer, nil
 }
 
-// PredictRisk performs fraud risk prediction on a transaction
 func (s *LogisticRegressionScorer) PredictRisk(tx models.Transaction) (*RiskPrediction, error) {
 	startTime := time.Now()
 	features := s.extractFeatures(tx)

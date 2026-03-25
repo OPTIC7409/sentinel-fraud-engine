@@ -25,7 +25,7 @@ const (
 
 var (
 	kafkaBrokers = getEnv("KAFKA_BROKERS", "localhost:9092")
-	databaseURL  = getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/sentinel_fraud?sslmode=disable")
+	databaseURL  = getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5433/sentinel_fraud?sslmode=disable")
 	modelDir     = getEnv("MODEL_DIR", "../../ml/model")
 )
 

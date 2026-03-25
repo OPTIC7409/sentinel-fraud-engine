@@ -119,7 +119,7 @@ CREATE INDEX idx_transactions_merchant_category ON transactions(merchant_categor
 - `amount` is NUMERIC for exact decimal precision (never use FLOAT for money)
 - `timestamp` is the transaction's business timestamp (when it occurred)
 - `created_at` is when we ingested it (for debugging clock skew)
-- `metadata` is JSONB for extensibility without schema changes (e.g., device fingerprint)
+- `metadata` is JSONB for extensibility without schema changes (e.g, device fingerprint)
 - No `user_id` foreign key to users table - users here are customers, not dashboard users
 
 **Access Patterns**:
@@ -155,6 +155,8 @@ INSERT INTO transactions VALUES
 
 **Purpose**: Audit trail of all fraud risk assessments. One-to-one with transactions.
 
+How `risk_score` and `fraud_probability` are produced (feature engineering, logistic regression, and rounding) is documented in [ARCHITECTURE.md](./ARCHITECTURE.md) in **How the risk score is computed (mathematics and ML)**.
+
 **Schema**:
 ```sql
 CREATE TABLE risk_scores (
@@ -174,7 +176,7 @@ CREATE INDEX idx_risk_scores_scored_at ON risk_scores(scored_at DESC);
 ```
 
 **Design Decisions**:
-- `transaction_id` is UNIQUE - each transaction scored exactly once (idempotency)
+- `transaction_id` is UNIQUE - each transaction scored exactly once
 - `risk_score` is 0-100 integer for display (derived from fraud_probability)
 - `fraud_probability` is the raw ML model output (0.0 to 1.0)
 - `feature_vector` stores inputs to model as JSON for debugging:
@@ -194,7 +196,7 @@ CREATE INDEX idx_risk_scores_scored_at ON risk_scores(scored_at DESC);
 **Access Patterns**:
 1. "Get risk score for transaction X": `WHERE transaction_id = ?`
 2. "Get all high-risk transactions": `WHERE risk_score >= 75 ORDER BY scored_at DESC`
-3. "Analyze model performance": `SELECT model_version, AVG(risk_score), COUNT(*) GROUP BY model_version`
+3. "Analyse model performance": `SELECT model_version, AVG(risk_score), COUNT(*) GROUP BY model_version`
 
 **Sample Data**:
 ```sql
@@ -306,7 +308,7 @@ LEFT JOIN risk_scores r ON t.id = r.transaction_id;
 **Why these indexes?**
 - **Composite indexes** match WHERE + ORDER BY patterns (user_id + timestamp)
 - **Partial indexes** on alerts reduce index size (only index assigned alerts)
-- **DESC indexes** optimize ORDER BY DESC queries (most recent first)
+- **DESC indexes** optimise ORDER BY DESC queries (most recent first)
 
 ---
 
@@ -475,10 +477,10 @@ FROM generate_series(1, 1000);
 
 This schema is designed for **correctness, performance, and observability**:
 
-✅ **Normalized** - No redundancy, clear relationships  
-✅ **Indexed** - All query patterns covered  
-✅ **Constrained** - Invalid states prevented at DB level  
-✅ **Auditable** - Timestamps and foreign keys everywhere  
-✅ **Scalable** - Partitioning ready for growth  
+- **Normalised** - No redundancy, clear relationships  
+- **Indexed** - Query patterns covered  
+- **Constrained** - Invalid states blocked at DB level  
+- **Auditable** - Timestamps and foreign keys throughout  
+- **Scalable** - Partitioning when volume warrants it  
 
-Every decision prioritizes **production-readiness over convenience**.
+Every decision prioritises **production-readiness over convenience**.

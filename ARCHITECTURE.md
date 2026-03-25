@@ -2,16 +2,14 @@
 
 ## Executive Summary
 
-The Sentinel Fraud Engine is a production-grade, real-time fraud detection and risk scoring platform designed for high-throughput financial transaction processing. The system processes 1000+ transactions per second through a distributed, event-driven microservices architecture.
+Sentinel is a fraud scoring demo: Go microservices, Kafka between stages, Postgres for storage, and a logistic regression model invoked from the risk engine. Throughput targets are in the order of 1k events per second on suitable hardware; what you get on a laptop is lower and is a tooling limit as much as anything else.
 
-## Design Philosophy
+## Design philosophy
 
-This system is architected using principles employed by tier-1 financial institutions:
-
-- **Event-Driven Architecture**: Decoupled services communicate via message streams, enabling independent scaling and fault isolation
-- **Domain-Driven Design**: Each service encapsulates specific business capabilities with clear boundaries
-- **Fail-Fast with Observability**: Explicit error handling, structured logging, and metrics at every layer
-- **Data Integrity First**: ACID guarantees for financial data, idempotency for event processing
+- **Event-driven**: services talk over Kafka so ingest, scoring, and alerts can scale and fail independently
+- **Clear service boundaries**: one responsibility per binary, shared types in `shared/`
+- **Observable**: structured logs and metrics hooks on the hot paths
+- **Data integrity**: ACID for money-movement records, idempotent consumers where it matters
 
 ---
 
@@ -103,7 +101,7 @@ External Source → Validate → Enrich → Publish to Kafka → ACK
 **Responsibilities**:
 - Consume transactions from `raw-transactions` stream
 - Extract features required by ML model:
-  - Transaction amount (normalized)
+  - Transaction amount (normalised)
   - Velocity metrics (transactions per user in time window)
   - Location deviation (distance from typical user locations)
   - Time anomaly score (unusual hour/day patterns)
@@ -125,7 +123,7 @@ External Source → Validate → Enrich → Publish to Kafka → ACK
 
 **Performance Considerations**:
 - Model inference must complete in <10ms for throughput target
-- Feature extraction parallelized where possible
+- Feature extraction parallelised where possible
 - Database writes batched every 100ms to reduce I/O
 
 ---
@@ -170,7 +168,7 @@ Alert {
 **Responsibilities**:
 - **Authentication**: JWT token validation on all protected endpoints
 - **Rate Limiting**: Per-user and per-IP limits to prevent abuse
-- **Input Sanitization**: Validate and sanitize all incoming requests
+- **Input Sanitisation**: Validate and sanitise all incoming requests
 - **Query Endpoints**:
   - `GET /transactions` - Paginated transaction history
   - `GET /transactions/:id` - Single transaction with risk details
@@ -234,9 +232,9 @@ Alert {
 ## Database Schema (PostgreSQL)
 
 ### Design Principles
-- **Normalized for Integrity**: Proper foreign keys and constraints
+- **Normalised for Integrity**: Proper foreign keys and constraints
 - **Indexed for Performance**: All query patterns have supporting indexes
-- **Time-Series Optimized**: Partitioning by date for transactions table
+- **Time-Series Optimised**: Partitioning by date for transactions table
 - **Audit Trail**: All mutations tracked with timestamps
 
 ### Tables Overview
@@ -358,35 +356,73 @@ CREATE INDEX idx_transactions_timestamp ON transactions(timestamp DESC);
 
 ### Features (5 core features)
 
-1. **Transaction Amount (normalized)**
-   - Log-scale normalization: `log(amount + 1) / log(max_amount)`
-   - Rationale: Large amounts more suspicious
+1. **Transaction Amount (normalised)**
+   - Log-scale normalisation: `log(amount + 1) / log(10000)` (see `maxAmount` in `scorer.go`)
+   - Rationale: larger amounts contribute more to the linear score before saturation
 
 2. **Velocity Score**
-   - Count of transactions by user in last 60 minutes
-   - Formula: `min(count / 10, 1.0)` (capped at 10)
-   - Rationale: Rapid successive transactions indicate fraud
+   - In code: count of transactions for that `user_id` in the current **one-hour** rolling window (reset when the window rolls), before the current event is counted toward the next score
+   - Formula: `min(RecentTxnCount / 10, 1.0)`
+   - Rationale: burst activity increases fraud signal
 
 3. **Location Deviation**
-   - Distance from user's typical location (Haversine)
-   - Normalized: `min(distance_km / 1000, 1.0)`
-   - Rationale: Geographically distant transactions suspicious
+   - Great-circle distance (Haversine, Earth radius 6371 km) from the transaction point to the user’s **exponential moving “typical” location** (EMA with `alpha = 0.1` over past txns with coordinates)
+   - Only non-zero once the user has at least **five** prior transactions with lat/lng; otherwise `0`
+   - Formula: `min(distance_km / 1000, 1.0)` capped at 1
+   - Rationale: transactions far from usual geography score higher
 
 4. **Time Anomaly Score**
-   - Unusual hour (3am purchases) or day (holiday activity)
-   - Binary: 1 if time is outside 8am-10pm or weekend
-   - Rationale: Fraudsters act during off-hours
+   - Binary feature in code: `1` if local hour is **before 06:00**, else `0` (implementation uses `hour < 6 || hour > 23`; the second branch never fires for valid clock hours, so effectively **night = 00:00–05:59**)
+   - Rationale: simple off-hours flag (weekends are **not** used in the current code path)
 
 5. **Merchant Category Risk**
-   - Pre-assigned risk rating per category
-   - Electronics: 0.7, Groceries: 0.1, Wire Transfer: 0.9
-   - Rationale: Domain knowledge of fraud-prone categories
+   - Lookup table in Go (`initializeMerchantRisks`): e.g. groceries `0.1`, retail `0.25`, electronics `0.7`, wire_transfer `0.9`, unknown category defaults to `0.5`
+   - Rationale: domain prior layered under the learned weights
 
 ### Training Data
 - 100,000 synthetic transactions
-- 5% labeled as fraud (realistic fraud rate)
+- 5% labelled as fraud (realistic fraud rate)
 - Features engineered from transaction attributes
 - 80/20 train/test split
+
+### How the risk score is computed (mathematics and ML)
+
+This is the path implemented in `shared/fraudmodel/scorer.go`, `ml/model/inference.py`, and training in `ml/training/train_model.py`.
+
+**1. Build the feature vector (Go)**  
+For each transaction, the scorer produces a fixed-order vector **x** ∈ [0,1]^5 (each component clamped or constructed to sit in that range):
+
+| Feature | Definition (as coded) |
+|--------|------------------------|
+| `amount_normalized` | `log(amount + 1) / log(10000)` with `amount > 0` |
+| `velocity_score` | `min(RecentTxnCount / 10, 1)` in the active hourly window (see above) |
+| `location_deviation` | `min(haversine_km(typical, txn) / 1000, 1)` or `0` if cold start |
+| `time_anomaly` | `1` if hour `< 6`, else `0` |
+| `merchant_category_risk` | table lookup, default `0.5` |
+
+The **user pattern** (typical lat/lng, recent count, window reset) is updated **after** the features for the current transaction are read, so the current event does not inflate its own velocity feature.
+
+**2. Logistic regression (Python, sklearn)**  
+Training fits `sklearn.linear_model.LogisticRegression` on CSV features (`ml/training/data/features.csv`) with:
+
+- `class_weight='balanced'` (mitigates rare fraud class)
+- `solver='lbfgs'`, `C=1.0`, `max_iter=1000`, fixed `random_state`
+
+The fitted model stores a weight vector **w** and intercept **b** (sklearn’s `coef_` and `intercept_`). For one row **x**, the linear part is **z = b + w^T x**. The estimated probability of the **fraud** class (positive class) is the logistic (sigmoid):
+
+**P(fraud | x) = σ(z) = 1 / (1 + exp(−z))**
+
+At inference time, `inference.py` builds **x** in the same column order as training, calls `model.predict_proba(x)[0][1]`, and prints that probability as JSON.
+
+**3. From probability to `risk_score` (Go)**  
+The risk engine takes `p = P(fraud | x)` and sets:
+
+**risk_score = round(100 × p)**, then clamps to **[0, 100]**.
+
+That integer is what downstream alerting (for example score ≥ 75) and the API expose as “risk score”. The raw **p** is stored as `fraud_probability` for audit and analysis.
+
+**4. Why subprocess Python**  
+The Go service shells out to `python3 ml/model/inference.py` with a JSON feature payload so the **same** pickled `fraud_model_v1.0.0.joblib` artefact used in training is applied without reimplementing sklearn’s numerics in Go. A production bank deployment would typically replace this with a bounded RPC model server, embedded ONNX, or a validated native port, after model risk sign-off.
 
 ### Inference API
 ```go
@@ -396,9 +432,9 @@ type FraudScorer interface {
 ```
 
 ### Model Versioning
-- Models stored as artifacts: `ml/model/fraud_model_v1.pkl`
-- Version tracked in risk_scores table
-- Allows A/B testing and rollback
+- Models stored as joblib artefacts: `ml/model/fraud_model_v1.0.0.joblib` (see `fraudmodel.ModelVersion`)
+- Version tracked in `risk_scores.model_version`
+- Allows A/B testing and rollback once multiple artefacts are wired in
 
 ---
 
@@ -411,7 +447,7 @@ type FraudScorer interface {
 - **Expiry**: 1 hour (short-lived for security)
 - **Refresh**: Separate refresh token with 7-day expiry
 
-### Authorization
+### Authorisation
 - **Role-Based Access Control (RBAC)**:
   - `analyst`: Read transactions/alerts, resolve alerts
   - `admin`: Full access + user management
@@ -424,7 +460,7 @@ type FraudScorer interface {
 - **Response**: 429 Too Many Requests with Retry-After header
 
 ### Input Validation
-- **All Inputs Sanitized**: SQL injection, XSS prevention
+- **All Inputs Sanitised**: SQL injection, XSS prevention
 - **Type Validation**: Strong typing + runtime checks
 - **Range Checks**: Transaction amount must be > 0 and < $1M
 
@@ -457,7 +493,7 @@ type FraudScorer interface {
 - **Latency**: p50, p95, p99 processing times
 - **Error Rate**: Errors per second + error types
 - **Queue Depth**: Kafka consumer lag
-- **Database**: Query times, connection pool utilization
+- **Database**: Query times, connection pool utilisation
 
 ### Alerts (via metrics)
 - Risk engine processing time p95 > 20ms
@@ -502,7 +538,7 @@ ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 defer cancel()
 ```
 
-### Database Optimization
+### Database Optimisation
 - **Connection Pooling**: Max 50 connections per service
 - **Prepared Statements**: Reduce query parse time
 - **Batch Writes**: Commit every 100ms or 500 records
@@ -574,7 +610,7 @@ Docker Compose Stack:
 
 ## Future Enhancements (Out of Scope v1)
 
-1. **Graph-based fraud detection**: Analyze networks of connected accounts
+1. **Graph-based fraud detection**: Analyse networks of connected accounts
 2. **Real-time feature engineering**: Apache Flink for complex aggregations
 3. **Model retraining pipeline**: Automated retraining on new fraud patterns
 4. **Multi-region deployment**: Geo-distributed for global transactions
@@ -584,12 +620,5 @@ Docker Compose Stack:
 
 ## Conclusion
 
-This architecture balances **simplicity with production-readiness**. Every design decision prioritizes:
-
-1. **Correctness**: Financial data integrity is non-negotiable
-2. **Observability**: Every operation is traceable
-3. **Performance**: Meets real-world bank throughput requirements
-4. **Maintainability**: Clear boundaries, explicit error handling
-
-The system is designed to be **explainable in a technical review** and **deployable in a regulated environment**.
+The layout is meant to be easy to explain in an interview or design review: where state lives, how events move, and where you would harden auth, key management, and model governance for a real bank deployment. It is a portfolio slice, not a certified production system.
 
