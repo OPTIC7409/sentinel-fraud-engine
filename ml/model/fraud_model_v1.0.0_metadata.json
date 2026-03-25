@@ -1,0 +1,41 @@
+{
+  "model_version": "v1.0.0",
+  "model_type": "LogisticRegression",
+  "trained_at": "2026-03-25T21:30:46.003388",
+  "feature_names": [
+    "amount_normalized",
+    "velocity_score",
+    "location_deviation",
+    "time_anomaly",
+    "merchant_category_risk"
+  ],
+  "feature_count": 5,
+  "training_samples": 80000,
+  "test_samples": 20000,
+  "metrics": {
+    "roc_auc": 0.9812521052631579,
+    "optimal_threshold": 0.8812490531194246,
+    "test_accuracy": 0.9632,
+    "confusion_matrix": [
+      [
+        18343,
+        657
+      ],
+      [
+        79,
+        921
+      ]
+    ]
+  },
+  "hyperparameters": {
+    "class_weight": "balanced",
+    "solver": "lbfgs",
+    "max_iter": 1000,
+    "C": 1.0
+  },
+  "risk_score_mapping": {
+    "description": "fraud_probability (0-1) * 100 = risk_score (0-100)",
+    "high_risk_threshold": 75,
+    "critical_threshold": 95
+  }
+}
