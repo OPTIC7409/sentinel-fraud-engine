@@ -71,58 +71,90 @@ See [DATABASE_SCHEMA.md](./DATABASE_SCHEMA.md) for complete schema design.
 
 ### Prerequisites
 
-- Go 1.21+
-- PostgreSQL 15+
-- Kafka 3.x or Redis 7+
-- Node.js 18+
+- Docker & Docker Compose
+- Go 1.21+ (for local development)
 - Python 3.11+ (for ML training)
 
-### Local Development Setup
+### Quick Start (Docker)
 
 ```bash
 # 1. Clone repository
 git clone https://github.com/yourusername/sentinel-fraud-engine.git
 cd sentinel-fraud-engine
 
-# 2. Set up database
-docker compose up -d postgres
-go run database/migrations/*.go up
+# 2. Start all services
+./start.sh
 
-# 3. Train ML model
-cd ml/training
-python train_model.py
-cd ../..
+# 3. Verify services are running
+curl http://localhost:8000/health
 
-# 4. Start services with Docker Compose
-docker compose up
-
-# 5. Access dashboard
-open http://localhost:3000
+# 4. View logs
+docker-compose logs -f
 ```
 
-### Running Individual Services
+The startup script will:
+- Start PostgreSQL and Kafka
+- Run database migrations
+- Seed test users
+- Start all 4 microservices
+
+### Manual Setup (Local Development)
 
 ```bash
-# Transaction Ingest Service
-cd services/transaction-ingest
-go run main.go
+# 1. Start infrastructure
+docker-compose up -d postgres zookeeper kafka
 
-# Risk Engine Service
-cd services/risk-engine
-go run main.go
+# 2. Run migrations
+cd database && go run migrate.go up && cd ..
 
-# Alert Service
-cd services/alert-service
-go run main.go
+# 3. Seed database
+docker exec -i sentinel-postgres psql -U postgres -d sentinel_fraud < database/seeds/001_users.sql
 
-# API Gateway
-cd services/api-gateway
-go run main.go
+# 4. Start services individually
+cd services/transaction-ingest && go run main.go &
+cd services/risk-engine && go run main.go &
+cd services/alert-service && go run main.go &
+cd services/api-gateway && go run main.go &
+```
 
-# Frontend Dashboard
-cd frontend/dashboard
-npm install
-npm run dev
+### Testing the System
+
+```bash
+# Check API health
+curl http://localhost:8000/health
+
+# Login (get JWT token)
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"analyst@sentinel.com","password":"sentinel123"}'
+
+# Get recent transactions (use token from login)
+curl http://localhost:8000/api/transactions?limit=10 \
+  -H "Authorization: Bearer <your-token>"
+
+# Get open alerts
+curl http://localhost:8000/api/alerts?status=open \
+  -H "Authorization: Bearer <your-token>"
+
+# Get system metrics
+curl http://localhost:8000/api/metrics \
+  -H "Authorization: Bearer <your-token>"
+```
+
+### Monitoring Logs
+
+```bash
+# All services
+docker-compose logs -f
+
+# Specific service
+docker-compose logs -f risk-engine
+
+# Watch alerts being created
+docker-compose logs -f alert-service | grep "FRAUD ALERT"
+
+# Monitor transaction processing
+docker-compose logs -f risk-engine | grep "scored successfully"
 ```
 
 ## 🧪 Testing
