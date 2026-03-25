@@ -29,7 +29,7 @@ var (
 
 func main() {
 	logger.InitLogger(ServiceName, getEnv("ENV", "development") == "development")
-	
+
 	log.Info().
 		Str("service", ServiceName).
 		Str("kafka_brokers", kafkaBrokers).
@@ -84,9 +84,9 @@ func main() {
 
 // AlertHandler processes scored transactions and creates alerts
 type AlertHandler struct {
-	db             *sql.DB
-	alertsCreated  int64
-	alertsSkipped  int64
+	db            *sql.DB
+	alertsCreated int64
+	alertsSkipped int64
 }
 
 func NewAlertHandler(db *sql.DB) *AlertHandler {
@@ -186,7 +186,7 @@ func (h *AlertHandler) dispatchAlert(alert *models.Alert, event models.ScoredTra
 	// 1. Send webhook to fraud investigation system
 	// 2. Send notification to on-call analyst
 	// 3. Create ticket in case management system
-	
+
 	// For now, log structured alert data
 	log.Warn().
 		Int64("alert_id", alert.ID).

@@ -37,7 +37,7 @@ func NewProducer(brokers []string, topic string) *Producer {
 		Balancer:     &kafka.Hash{}, // Hash by key for ordering per user
 		RequiredAcks: kafka.RequireAll,
 		Compression:  kafka.Snappy,
-		BatchSize:    100,             // Batch for performance
+		BatchSize:    100, // Batch for performance
 		BatchTimeout: 10 * time.Millisecond,
 	}
 
@@ -192,8 +192,8 @@ func EnsureTopicsExist(brokers []string, topics []string) error {
 	for i, topic := range topics {
 		topicConfigs[i] = kafka.TopicConfig{
 			Topic:             topic,
-			NumPartitions:     8,  // Allow parallel consumption
-			ReplicationFactor: 1,  // Single node for local dev
+			NumPartitions:     8, // Allow parallel consumption
+			ReplicationFactor: 1, // Single node for local dev
 		}
 	}
 

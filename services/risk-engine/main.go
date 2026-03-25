@@ -31,7 +31,7 @@ var (
 
 func main() {
 	logger.InitLogger(ServiceName, getEnv("ENV", "development") == "development")
-	
+
 	log.Info().
 		Str("service", ServiceName).
 		Str("kafka_brokers", kafkaBrokers).
@@ -103,9 +103,9 @@ func main() {
 
 // RiskProcessor processes transactions and assigns risk scores
 type RiskProcessor struct {
-	db       *sql.DB
-	scorer   fraudmodel.FraudScorer
-	producer *kafka.Producer
+	db             *sql.DB
+	scorer         fraudmodel.FraudScorer
+	producer       *kafka.Producer
 	processedCount int64
 }
 
@@ -255,8 +255,7 @@ func (p *RiskProcessor) publishScoredTransaction(event models.TransactionEvent, 
 
 func isDuplicateError(err error) bool {
 	// PostgreSQL duplicate key error has specific error code
-	return err != nil && (
-		err.Error() == "sql: no rows affected" ||
+	return err != nil && (err.Error() == "sql: no rows affected" ||
 		err.Error() == "pq: duplicate key value violates unique constraint")
 }
 

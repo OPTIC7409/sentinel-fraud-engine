@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -18,9 +17,9 @@ import (
 )
 
 const (
-	ServiceName         = "transaction-ingest"
-	TransactionsPerSec  = 10 // Configurable load
-	NumWorkers          = 50  // Concurrent workers
+	ServiceName        = "transaction-ingest"
+	TransactionsPerSec = 10 // Configurable load
+	NumWorkers         = 50 // Concurrent workers
 )
 
 var (
@@ -30,7 +29,7 @@ var (
 func main() {
 	// Initialize structured logging
 	logger.InitLogger(ServiceName, getEnv("ENV", "development") == "development")
-	
+
 	log.Info().
 		Str("service", ServiceName).
 		Str("kafka_brokers", kafkaBrokers).
@@ -56,7 +55,7 @@ func main() {
 
 	// Start transaction generator
 	generator := NewTransactionGenerator(producer)
-	
+
 	go func() {
 		if err := generator.Run(ctx); err != nil {
 			log.Error().Err(err).Msg("Generator stopped with error")
@@ -67,18 +66,18 @@ func main() {
 	<-sigChan
 	log.Info().Msg("Shutdown signal received, stopping service...")
 	cancel()
-	
+
 	time.Sleep(2 * time.Second) // Allow in-flight transactions to complete
 	log.Info().Msg("Service stopped")
 }
 
 // TransactionGenerator generates synthetic transactions
 type TransactionGenerator struct {
-	producer      *kafka.Producer
-	rand          *rand.Rand
+	producer           *kafka.Producer
+	rand               *rand.Rand
 	merchantCategories []string
-	currencies    []string
-	locations     []Location
+	currencies         []string
+	locations          []Location
 }
 
 type Location struct {
@@ -121,14 +120,14 @@ func (g *TransactionGenerator) Run(ctx context.Context) error {
 				Float64("duration_seconds", time.Since(startTime).Seconds()).
 				Msg("Generator stopped")
 			return ctx.Err()
-			
+
 		case <-ticker.C:
 			txn := g.generateTransaction()
 			if err := g.publishTransaction(ctx, txn); err != nil {
 				log.Error().Err(err).Str("transaction_id", txn.ID.String()).Msg("Failed to publish transaction")
 				continue
 			}
-			
+
 			transactionCount++
 			if transactionCount%100 == 0 {
 				tps := float64(transactionCount) / time.Since(startTime).Seconds()
@@ -145,7 +144,7 @@ func (g *TransactionGenerator) Run(ctx context.Context) error {
 func (g *TransactionGenerator) generateTransaction() *models.Transaction {
 	category := g.merchantCategories[g.rand.Intn(len(g.merchantCategories))]
 	location := g.locations[g.rand.Intn(len(g.locations))]
-	
+
 	// Amount varies by category
 	var amount float64
 	switch category {
@@ -158,13 +157,13 @@ func (g *TransactionGenerator) generateTransaction() *models.Transaction {
 	default:
 		amount = 20 + g.rand.Float64()*280 // $20-$300
 	}
-	
+
 	lat := location.Lat + (g.rand.Float64()-0.5)*0.4 // ~20km variance
 	lng := location.Lng + (g.rand.Float64()-0.5)*0.4
 
 	return &models.Transaction{
 		ID:               uuid.New(),
-		UserID:           int64(g.rand.Intn(10000) + 1), // 10k users
+		UserID:           int64(g.rand.Intn(10000) + 1),  // 10k users
 		Amount:           float64(int(amount*100)) / 100, // Round to cents
 		Currency:         "USD",
 		MerchantID:       fmt.Sprintf("merchant_%s_%d", category, g.rand.Intn(1000)),

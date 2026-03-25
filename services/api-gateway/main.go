@@ -31,7 +31,7 @@ var (
 
 func main() {
 	logger.InitLogger(ServiceName, getEnv("ENV", "development") == "development")
-	
+
 	log.Info().
 		Str("service", ServiceName).
 		Int("port", Port).
@@ -51,7 +51,7 @@ func main() {
 
 	// Create router
 	router := mux.NewRouter()
-	
+
 	// Create API handler
 	api := NewAPIHandler(db)
 
@@ -63,7 +63,7 @@ func main() {
 	protected := router.PathPrefix("/api").Subrouter()
 	protected.Use(api.AuthMiddleware)
 	protected.Use(api.RateLimitMiddleware)
-	
+
 	protected.HandleFunc("/transactions", api.GetTransactions).Methods("GET")
 	protected.HandleFunc("/transactions/{id}", api.GetTransaction).Methods("GET")
 	protected.HandleFunc("/alerts", api.GetAlerts).Methods("GET")
@@ -126,14 +126,14 @@ func (h *APIHandler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 		"service":   ServiceName,
 		"timestamp": time.Now().Unix(),
 	}
-	
+
 	// Check database
 	if err := h.db.Ping(); err != nil {
 		health["status"] = "unhealthy"
 		health["database"] = "down"
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	
+
 	json.NewEncoder(w).Encode(health)
 }
 
@@ -143,7 +143,7 @@ func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
@@ -151,7 +151,7 @@ func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// For demo purposes, accept any login (in production, verify against bcrypt hash)
 	// Real implementation would query users table and verify password_hash
-	
+
 	token, err := generateJWT(creds.Email, "analyst")
 	if err != nil {
 		http.Error(w, "Token generation failed", http.StatusInternalServerError)
@@ -165,7 +165,7 @@ func (h *APIHandler) Login(w http.ResponseWriter, r *http.Request) {
 			"role":  "analyst",
 		},
 	}
-	
+
 	json.NewEncoder(w).Encode(response)
 	log.Info().Str("email", creds.Email).Msg("User logged in")
 }
@@ -204,7 +204,7 @@ func (h *APIHandler) GetTransactions(w http.ResponseWriter, r *http.Request) {
 			fraudProb                                          *float64
 		)
 
-		if err := rows.Scan(&id, &userID, &amount, &currency, &merchantID, &merchantCategory, 
+		if err := rows.Scan(&id, &userID, &amount, &currency, &merchantID, &merchantCategory,
 			&timestamp, &riskScore, &fraudProb); err != nil {
 			continue
 		}
@@ -283,7 +283,7 @@ func (h *APIHandler) GetTransaction(w http.ResponseWriter, r *http.Request) {
 	if riskScore != nil {
 		txn["risk_score"] = *riskScore
 		txn["fraud_probability"] = *fraudProb
-		
+
 		var featVec map[string]float64
 		json.Unmarshal(features, &featVec)
 		txn["feature_vector"] = featVec
@@ -323,9 +323,9 @@ func (h *APIHandler) GetAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts := []map[string]interface{}{}
 	for rows.Next() {
 		var (
-			id, riskScore                   int64
-			txnID, priority, alertStatus    string
-			createdAt                       time.Time
+			id, riskScore                int64
+			txnID, priority, alertStatus string
+			createdAt                    time.Time
 		)
 
 		if err := rows.Scan(&id, &txnID, &riskScore, &priority, &alertStatus, &createdAt); err != nil {
@@ -356,11 +356,11 @@ func (h *APIHandler) GetAlert(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	query := `SELECT id, transaction_id, risk_score, priority, status, created_at FROM alerts WHERE id = $1`
-	
+
 	var (
-		alertID, riskScore         int64
-		txnID, priority, status    string
-		createdAt                  time.Time
+		alertID, riskScore      int64
+		txnID, priority, status string
+		createdAt               time.Time
 	)
 
 	err := h.db.QueryRow(query, id).Scan(&alertID, &txnID, &riskScore, &priority, &status, &createdAt)
@@ -391,7 +391,7 @@ func (h *APIHandler) ResolveAlert(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	query := `UPDATE alerts SET status = 'resolved', resolved_at = $1 WHERE id = $2`
-	
+
 	_, err := h.db.Exec(query, time.Now(), id)
 	if err != nil {
 		http.Error(w, "Update failed", http.StatusInternalServerError)
@@ -406,7 +406,7 @@ func (h *APIHandler) ResolveAlert(w http.ResponseWriter, r *http.Request) {
 func (h *APIHandler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	// Query basic stats
 	var totalTxns, totalAlerts, openAlerts int64
-	
+
 	h.db.QueryRow("SELECT COUNT(*) FROM transactions").Scan(&totalTxns)
 	h.db.QueryRow("SELECT COUNT(*) FROM alerts").Scan(&totalAlerts)
 	h.db.QueryRow("SELECT COUNT(*) FROM alerts WHERE status = 'open'").Scan(&openAlerts)
@@ -426,12 +426,12 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		
+
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		
+
 		next.ServeHTTP(w, r)
 	})
 }
